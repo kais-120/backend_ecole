@@ -15,11 +15,12 @@ const port = process.env.PORT || 5000;
 sequelize.authenticate()
   .then(() => {
     console.log("✅ Neon PostgreSQL connected");
+    console.log("✅ Database synchronized");
   })
+  
   .catch((err) => {
     console.error("❌ Database connection failed:", err);
   });
-
 app.use(express.json());
 app.use(cors());
 

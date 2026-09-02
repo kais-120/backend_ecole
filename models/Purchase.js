@@ -21,6 +21,10 @@ const Purchase = sequelize.define("purchases", {
     quantity: {
         type: DataTypes.INTEGER,
         defaultValue: 0
+    },
+    is_deleted:{
+        type:DataTypes.BOOLEAN,
+        defaultValue:false
     }
 })
 
