@@ -7,13 +7,18 @@ const appStart = require("./app");
 require("./models/index")
 const startScheduler = require("./jobs/scheduler");
 const startSalaryJob = require("./jobs/salaryJob");
-const startSalaryJobTest = require("./jobs/salaryJobTest");
+const { startMonthlySubscriptionJob } = require("./jobs/generateMonthlySubscriptions");
 
 
 const port = process.env.PORT || 5000;
 
 sequelize.authenticate()
- sequelize.sync({ alter: true });
+  .then(() => {
+    console.log("✅ Neon PostgreSQL connected");
+  })
+  .catch((err) => {
+    console.error("❌ Database connection failed:", err);
+  });
 
 app.use(express.json());
 app.use(cors());
@@ -25,5 +30,6 @@ app.listen(port, async () => {
   console.log(`Server started on port ${port}`);
   // startScheduler()
   startSalaryJob()
+    startMonthlySubscriptionJob();
   // startSalaryJobTest()
 });

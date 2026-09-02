@@ -1,4 +1,5 @@
 // jobs/generateMonthlySubscriptions.js
+const cron = require("node-cron");
 const Student = require("../models/Student");
 const Zone = require("../models/Zone");
 const Subscription = require("../models/Subscription");
@@ -24,20 +25,34 @@ async function runMonthlySubscriptionJob() {
         return;
     }
 
-    const students = await Student.findAll({ include: [{ model: Zone }] });
-    // if Student isn't directly associated to Zone, fetch zones separately:
-    // const zones = await Zone.findAll();
-    // const zoneMap = Object.fromEntries(zones.map(z => [z.id, z]));
+    const students = await Student.findAll();
+    const zones = await Zone.findAll();
+    const zoneMap = Object.fromEntries(zones.map(z => [z.id, z]));
 
     let created = 0;
+    let skipped = 0;
 
     for (const student of students) {
-        const zone = student.Zone; // or zoneMap[student.zone_id]
-        if (!zone) continue;
+        // most recent subscription tells us which zone this student is in
+        const lastSubscription = await Subscription.findOne({
+            where: { student_id: student.id },
+            order: [["createdAt", "DESC"]]
+        });
+
+        if (!lastSubscription || !lastSubscription.zone_id) {
+            skipped++;
+            continue;
+        }
+
+        const zone = zoneMap[lastSubscription.zone_id];
+        if (!zone) {
+            skipped++;
+            continue;
+        }
 
         await Subscription.create({
             amount: zone.price,
-            transport: !!student.transport, // adjust if transport lives elsewhere
+            transport: !!lastSubscription.transport,
             status: "non payé",
             student_id: student.id,
             zone_id: zone.id
@@ -47,7 +62,27 @@ async function runMonthlySubscriptionJob() {
     }
 
     await JobLog.create({ job_name: JOB_NAME, period });
-    console.log(`[${JOB_NAME}] created ${created} subscriptions for ${period}`);
+    console.log(`[${JOB_NAME}] created ${created} subscriptions, skipped ${skipped} for ${period}`);
 }
 
-module.exports = { runMonthlySubscriptionJob, hasRunThisMonth, currentPeriod, JOB_NAME };
+function startMonthlySubscriptionJob() {
+    // run once on boot, in case a scheduled run was missed during downtime
+    runMonthlySubscriptionJob().catch(err => {
+        console.error(`[${JOB_NAME}] boot run failed:`, err);
+    });
+
+    // then on the 1st of every month at 00:05
+    cron.schedule("5 0 1 * *", () => {
+        runMonthlySubscriptionJob().catch(err => {
+            console.error(`[${JOB_NAME}] scheduled run failed:`, err);
+        });
+    });
+}
+
+module.exports = {
+    runMonthlySubscriptionJob,
+    startMonthlySubscriptionJob,
+    hasRunThisMonth,
+    currentPeriod,
+    JOB_NAME
+};
