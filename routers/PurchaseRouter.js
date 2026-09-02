@@ -9,7 +9,7 @@ const {
     updatePurchase,
     deletePurchase,
     purchasesSummary
-} = require("../controllers/purchaseController");
+} = require("../controllers/PurchaseController");
 
 router.post("/", createPurchase);
 
