@@ -4,7 +4,7 @@ const {
     getDaycareBooksFees,
     updateDaycareBooksFees,
     updateSingleLevel,
-} = require("../controllers/daycareBooksFee");
+} = require("../controllers/DaycareBooksFee");
 
 router.get("/", getDaycareBooksFees);
 router.put("/", updateDaycareBooksFees);
