@@ -1,9 +1,6 @@
-const { Student } = require("../models");
+const { Student, Subscription, Zone } = require("../models");
 const ExcelJS = require("exceljs");
 const puppeteer = require("puppeteer");
-const { getDetailedReportData } = require("../services/reportService");
-const { buildExcelReport } = require("../services/excelReport");
-const { buildPdfReport } = require("../services/pdfReport");
 
 // Translate stored gender codes to Arabic display text if needed
 function genderLabel(g) {
@@ -11,6 +8,27 @@ function genderLabel(g) {
     if (g === "male" || g === "M") return "ذكر";
     if (g === "female" || g === "F") return "أنثى";
     return g || "";
+}
+
+// Translate boolean values to Arabic Yes/No
+function boolLabel(v) {
+    if (v === true) return "نعم";
+    if (v === false) return "لا";
+    return "";
+}
+
+// Translate stored payment status (French enum values) to Arabic display text
+function statusLabel(s) {
+    if (s === "payé") return "مدفوع";
+    if (s === "en attente") return "في الانتظار";
+    if (s === "non payé") return "غير مدفوع";
+    return s || "";
+}
+
+// Format money
+function amountLabel(v) {
+    if (v === null || v === undefined) return "";
+    return Number(v).toFixed(2);
 }
 
 // Escape values before injecting into HTML
@@ -23,6 +41,23 @@ function esc(value) {
         .replace(/"/g, "&quot;");
 }
 
+// Pull subscription-related fields out of a student in one place,
+// so both the PDF and Excel builders stay in sync.
+function getSubscriptionFields(student) {
+    const sub = student.subscription || null;
+
+    return {
+        paymentType: sub?.payment_type || "",
+        status: sub ? statusLabel(sub.status) : "",
+        amount: amountLabel(sub?.amount),
+        transport: sub ? boolLabel(sub.transport) : "",
+        book: sub ? boolLabel(sub.is_take_book) : "",
+        uniform: sub ? boolLabel(sub.is_take_uniform) : "",
+        promotion: sub?.promotion || "",
+        zone: sub?.zone?.label || sub?.zone?.zone_label || "",
+    };
+}
+
 function buildStudentsHtml({ students, level }) {
     const rows = students
         .map((student, index) => {
@@ -30,6 +65,7 @@ function buildStudentsHtml({ students, level }) {
                 ? new Date(student.birthday).toLocaleDateString("fr-FR")
                 : "";
             const phone = student.father_phone || student.mother_phone || "";
+            const sub = getSubscriptionFields(student);
 
             return `
                 <tr class="${index % 2 === 0 ? "row-alt" : ""}">
@@ -38,8 +74,16 @@ function buildStudentsHtml({ students, level }) {
                     <td>${esc(student.name)}</td>
                     <td class="col-center">${esc(genderLabel(student.gender))}</td>
                     <td class="col-center">${esc(birthday)}</td>
-                    <td class="col-center">${esc(student.classe)}</td>
+                    <td class="col-center">${esc(student.class)}</td>
                     <td class="col-center">${esc(phone)}</td>
+                    <td>${esc(student.address)}</td>
+                    <td class="col-center">${esc(sub.paymentType)}</td>
+                    <td class="col-center">${esc(sub.status)}</td>
+                    <td class="col-center">${esc(sub.amount)}</td>
+                    <td class="col-center">${esc(sub.transport)}</td>
+                    <td class="col-center">${esc(sub.book)}</td>
+                    <td class="col-center">${esc(sub.uniform)}</td>
+                    <td class="col-center">${esc(sub.zone)}</td>
                 </tr>
             `;
         })
@@ -61,7 +105,7 @@ function buildStudentsHtml({ students, level }) {
         body {
             font-family: 'Cairo', 'Amiri', 'Segoe UI', Tahoma, sans-serif;
             margin: 0;
-            padding: 30px 40px;
+            padding: 24px 30px;
             color: #0F172A;
             direction: rtl;
         }
@@ -70,14 +114,14 @@ function buildStudentsHtml({ students, level }) {
             background: #1E293B;
             color: #FFFFFF;
             border-radius: 10px;
-            padding: 22px 20px;
+            padding: 18px 20px;
             text-align: center;
-            margin-bottom: 18px;
+            margin-bottom: 16px;
         }
 
         .header h1 {
             margin: 0;
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 700;
         }
 
@@ -85,16 +129,16 @@ function buildStudentsHtml({ students, level }) {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 12px;
+            font-size: 11px;
             color: #64748B;
-            margin-bottom: 14px;
+            margin-bottom: 12px;
             padding: 0 4px;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 12px;
+            font-size: 9px;
         }
 
         thead tr {
@@ -103,7 +147,7 @@ function buildStudentsHtml({ students, level }) {
         }
 
         th, td {
-            padding: 9px 8px;
+            padding: 6px 4px;
             text-align: right;
             border: 0.5px solid #CBD5E1;
         }
@@ -114,7 +158,7 @@ function buildStudentsHtml({ students, level }) {
         }
 
         .col-center { text-align: center; }
-        .col-num { text-align: center; width: 36px; color: #64748B; }
+        .col-num { text-align: center; width: 26px; color: #64748B; }
 
         tr.row-alt td {
             background: #F1F5F9;
@@ -149,6 +193,14 @@ function buildStudentsHtml({ students, level }) {
                     <th>تاريخ الميلاد</th>
                     <th>القسم</th>
                     <th>الهاتف</th>
+                    <th>العنوان</th>
+                    <th>نوع الدفع</th>
+                    <th>حالة الدفع</th>
+                    <th>المبلغ</th>
+                    <th>النقل</th>
+                    <th>الكتاب</th>
+                    <th>الزي</th>
+                    <th>المنطقة</th>
                 </tr>
             </thead>
             <tbody>
@@ -158,6 +210,102 @@ function buildStudentsHtml({ students, level }) {
     </body>
     </html>
     `;
+}
+
+async function buildStudentsExcel({ students, level }) {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "School Management System";
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet("التلاميذ", {
+        views: [{ rightToLeft: true }],
+    });
+
+    sheet.columns = [
+        { header: "#", key: "num", width: 6 },
+        { header: "اللقب", key: "last_name", width: 16 },
+        { header: "الاسم", key: "name", width: 16 },
+        { header: "الجنس", key: "gender", width: 10 },
+        { header: "تاريخ الميلاد", key: "birthday", width: 14 },
+        { header: "القسم", key: "class", width: 14 },
+        { header: "الهاتف", key: "phone", width: 14 },
+        { header: "العنوان", key: "address", width: 24 },
+        { header: "نوع الدفع", key: "payment_type", width: 16 },
+        { header: "حالة الدفع", key: "status", width: 14 },
+        { header: "المبلغ", key: "amount", width: 12 },
+        { header: "النقل", key: "transport", width: 10 },
+        { header: "الكتاب", key: "book", width: 10 },
+        { header: "الزي", key: "uniform", width: 10 },
+        { header: "المنطقة", key: "zone", width: 14 },
+    ];
+
+    // Header styling
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FF1E293B" },
+        };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.border = {
+            top: { style: "thin", color: { argb: "FFCBD5E1" } },
+            bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+            left: { style: "thin", color: { argb: "FFCBD5E1" } },
+            right: { style: "thin", color: { argb: "FFCBD5E1" } },
+        };
+    });
+    headerRow.height = 22;
+
+    students.forEach((student, index) => {
+        const birthday = student.birthday
+            ? new Date(student.birthday).toLocaleDateString("fr-FR")
+            : "";
+        const phone = student.father_phone || student.mother_phone || "";
+        const sub = getSubscriptionFields(student);
+
+        const row = sheet.addRow({
+            num: index + 1,
+            last_name: student.last_name || "",
+            name: student.name || "",
+            gender: genderLabel(student.gender),
+            birthday,
+            class: student.class || "",
+            phone,
+            address: student.address || "",
+            payment_type: sub.paymentType,
+            status: sub.status,
+            amount: sub.amount,
+            transport: sub.transport,
+            book: sub.book,
+            uniform: sub.uniform,
+            zone: sub.zone,
+        });
+
+        row.eachCell((cell) => {
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.border = {
+                top: { style: "thin", color: { argb: "FFCBD5E1" } },
+                bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+                left: { style: "thin", color: { argb: "FFCBD5E1" } },
+                right: { style: "thin", color: { argb: "FFCBD5E1" } },
+            };
+            if (index % 2 === 0) {
+                cell.fill = {
+                    type: "pattern",
+                    pattern: "solid",
+                    fgColor: { argb: "FFF1F5F9" },
+                };
+            }
+        });
+    });
+
+    sheet.getColumn("last_name").alignment = { horizontal: "right" };
+    sheet.getColumn("name").alignment = { horizontal: "right" };
+    sheet.getColumn("address").alignment = { horizontal: "right" };
+
+    return workbook.xlsx.writeBuffer();
 }
 
 exports.exportStudents = async (req, res) => {
@@ -173,16 +321,31 @@ exports.exportStudents = async (req, res) => {
 
         const where = { is_deleted: false };
         if (level && level.trim() !== "") {
-            where.classe = level;
+            where.class = level;
         }
 
         const students = await Student.findAll({
             where,
+            include: [
+                {
+                    model: Subscription,
+                    as: "subscription",
+                    include: [
+                        {
+                            model: Zone,
+                            as: "zone",
+                        },
+                    ],
+                },
+            ],
             order: [
                 ["last_name", "ASC"],
                 ["name", "ASC"],
             ],
         });
+
+        const rawFilename = `لائحة-التلاميذ${level ? `-${level}` : ""}`;
+        const asciiFallback = `students${level ? `-${level}` : ""}`;
 
         // =========================
         // PDF (Puppeteer)
@@ -201,18 +364,15 @@ exports.exportStudents = async (req, res) => {
 
                 const pdfBuffer = await page.pdf({
                     format: "A4",
+                    landscape: true,
                     printBackground: true,
                     margin: { top: "20px", bottom: "30px", left: "20px", right: "20px" },
                 });
 
                 res.setHeader("Content-Type", "application/pdf");
-
-                const rawFilename = `لائحة-التلاميذ${level ? `-${level}` : ""}.pdf`;
-                const asciiFallback = `students${level ? `-${level}` : ""}.pdf`;
-
                 res.setHeader(
                     "Content-Disposition",
-                    `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(rawFilename)}`
+                    `attachment; filename="${asciiFallback}.pdf"; filename*=UTF-8''${encodeURIComponent(rawFilename)}.pdf`
                 );
 
                 return res.send(pdfBuffer);
@@ -222,8 +382,22 @@ exports.exportStudents = async (req, res) => {
         }
 
         // =========================
-        // EXCEL — keep your existing logic here
+        // EXCEL
         // =========================
+        if (format === "excel") {
+            const buffer = await buildStudentsExcel({ students, level });
+
+            res.setHeader(
+                "Content-Type",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            );
+            res.setHeader(
+                "Content-Disposition",
+                `attachment; filename="${asciiFallback}.xlsx"; filename*=UTF-8''${encodeURIComponent(rawFilename)}.xlsx`
+            );
+
+            return res.send(buffer);
+        }
     } catch (error) {
         console.error("Export students error:", error);
         return res.status(500).json({
