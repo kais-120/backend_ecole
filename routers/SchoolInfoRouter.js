@@ -5,7 +5,7 @@ const router = express.Router();
 const {
   getSchoolInfo,
   updateSchoolInfo,
-} = require("../controllers/schoolInfoController");
+} = require("../controllers/SchoolInfoController");
 
 router.get("/", getSchoolInfo);
 
