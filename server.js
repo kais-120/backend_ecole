@@ -19,7 +19,6 @@ const port = process.env.PORT || 5000;
 sequelize.authenticate()
   .then(() => {
     console.log("✅ Neon PostgreSQL connected");
-    sequelize.sync({alter:true})
     console.log("✅ Database synchronized");
   })
   
