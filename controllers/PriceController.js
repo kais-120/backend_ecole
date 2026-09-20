@@ -1,9 +1,41 @@
 const { body, validationResult } = require("express-validator");
 const Price = require("../models/TuitionFee");
+const { ActivityLog, User } = require("../models");
+
+const getUser = async (req) => {
+    const userId = req.userId;
+    return await User.findByPk(userId);
+};
+
+// Helper for activity logs
+const createActivityLog = async (
+    req,
+    action,
+    entityType,
+    entityId,
+    entityName,
+    description
+) => {
+    const user = await getUser(req);
+
+    await ActivityLog.create({
+        action,
+        entity_type: entityType,
+        entity_id: entityId,
+        entity_name: entityName,
+        description,
+        user_name: `${user.name} ${user.last_name}`,
+        user_role: user.role,
+        user_id: user.id,
+    });
+};
 
 exports.getPrices = async (req, res) => {
     try {
-        const price = await Price.findAll();
+        const price = await Price.findAll({
+            order: [["label", "ASC"]],
+
+        });
 
 
         return res.status(200).json({
@@ -20,149 +52,75 @@ exports.getPrices = async (req, res) => {
     }
 };
 
-exports.getAllAbsenceSupervisor = async (req, res) => {
-    try {
-        const absences = await Absence.findAll({
-             where: {
-                person_type: "surveillants"
-            },
-            order: [["createdAt", "DESC"]],
-        });
 
-        const persons = await Promise.all(
-            absences.map(async (absence) => {
+exports.updateTuitionFee = [
+    body("amount")
+        .optional()
+        .isFloat({ gt: 0 })
+        .withMessage("يجب أن يكون المعلوم رقمًا أكبر من صفر."),
 
-                const supervisor = await Supervisor.findByPk(absence.person_id);
+    body("label")
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage("اسم المستوى مطلوب."),
 
-                if (!supervisor) {
-                    return {
-                        ...absence.toJSON(),
-                        supervisor: null
-                    };
-                }
+    async (req, res) => {
+        const errors = validationResult(req);
 
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                errors: errors.array()
+            });
+        }
 
-                return {
-                    ...absence.toJSON(),
-                    person: {
-                        id: supervisor.id,
-                        name: supervisor.name,
-                        last_name: supervisor.last_name,
-                        role: supervisor.role
-                    }
-                };
-            })
-        );
+        try {
+            const { id } = req.params;
+            const { label, amount } = req.body;
 
-        return res.status(200).json({
-            message: "Absence supervisors retrieved successfully.",
-            persons,
-        });
+            const tuitionFee = await Price.findByPk(id);
 
-    } catch (error) {
-        console.error("Get supervisors error:", error);
-
-        return res.status(500).json({
-            message: "Server error.",
-        });
-    }
-};
-
-exports.getAllAbsenceTeacher = async (req, res) => {
-    try {
-        const absences = await Absence.findAll({
-             where: {
-                person_type: "maître"
-            },
-            order: [["createdAt", "DESC"]],
-        });
-
-        const persons = await Promise.all(
-            absences.map(async (absence) => {
-
-                const teacher = await Teacher.findByPk(absence.person_id,{
-                    include:[{
-                        model:Subject,
-                        as:"subject"
-                    }]
+            if (!tuitionFee) {
+                return res.status(404).json({
+                    message: "المعلوم غير موجود.",
                 });
+            }
 
-                if (!teacher) {
-                    return {
-                        ...absence.toJSON(),
-                        teacher: null
-                    };
-                }
-                return {
-                    ...absence.toJSON(),
-                    person: {
-                        id: teacher.id,
-                        name: teacher.name,
-                        last_name: teacher.last_name,
-                        subjects: teacher.subject.map(subject => subject.label)
-                    }
-                };
-            })
-        );
+            // Keep old values
+            const oldLabel = tuitionFee.label;
+            const oldAmount = tuitionFee.amount;
 
-        return res.status(200).json({
-            message: "Absence teacher retrieved successfully.",
-            persons,
-        });
+            if (label !== undefined) {
+                tuitionFee.label = label;
+            }
 
-    } catch (error) {
-        console.error("Get teacher error:", error);
+            if (amount !== undefined) {
+                tuitionFee.amount = amount;
+            }
 
-        return res.status(500).json({
-            message: "Server error.",
-        });
+            await tuitionFee.save();
+
+            // Activity log
+            await createActivityLog(
+                req,
+                "update",
+                "tuition_fee",
+                tuitionFee.id,
+                tuitionFee.label,
+                `تم تعديل المعلوم ${oldLabel} - المبلغ: ${oldAmount} → ${tuitionFee.amount}`
+            );
+
+            return res.status(200).json({
+                message: "تم تحديث المعلوم بنجاح.",
+                tuitionFee,
+            });
+
+        } catch (error) {
+            console.error("Update tuition fee error:", error);
+
+            return res.status(500).json({
+                message: "حدث خطأ أثناء تحديث المعلوم.",
+            });
+        }
     }
-};
-
-exports.getAllAbsenceEmploys = async (req, res) => {
-    try {
-        const absences = await Absence.findAll({
-             where: {
-                person_type: "employé"
-            },
-            order: [["createdAt", "DESC"]],
-        });
-
-        const persons = await Promise.all(
-            absences.map(async (absence) => {
-
-                const employ = await Employ.findByPk(absence.person_id);
-
-                if (!employ) {
-                    return {
-                        ...absence.toJSON(),
-                        employ: null
-                    };
-                }
-
-
-                return {
-                    ...absence.toJSON(),
-                    person: {
-                        id: employ.id,
-                        name: employ.name,
-                        last_name: employ.last_name,
-                        role: employ.role
-                    }
-                };
-            })
-        );
-
-        return res.status(200).json({
-            message: "Absence employs retrieved successfully.",
-            persons,
-        });
-
-    } catch (error) {
-        console.error("Get employs error:", error);
-
-        return res.status(500).json({
-            message: "Server error.",
-        });
-    }
-};
+];

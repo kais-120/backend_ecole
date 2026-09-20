@@ -16,6 +16,10 @@ const Zone  = sequelize.define("zone",{
     amount_yearly:{
         type:DataTypes.DOUBLE,
     },
+    is_deleted : {
+        type:DataTypes.BOOLEAN,
+        defaultValue:false
+    }
     
 })
 module.exports = Zone

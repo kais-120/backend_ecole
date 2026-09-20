@@ -1,0 +1,77 @@
+// jobs/markUnpaidSubscriptions.js
+const cron = require("node-cron");
+const { Op } = require("sequelize");
+const Subscription = require("../models/Subscription");
+const JobLog = require("../models/JobLog");
+
+const JOB_NAME = "mark_unpaid_subscriptions";
+
+// Same 20th -> 20th billing cycle as generateMonthlySubscriptions.js.
+// By the 15th, we're still inside the period that started on the 20th of last month.
+function currentPeriod(date = new Date()) {
+    let year = date.getFullYear();
+    let month = date.getMonth(); // 0-indexed
+    if (date.getDate() < 20) {
+        month -= 1;
+        if (month < 0) { month = 11; year -= 1; }
+    }
+    return `${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
+function periodRange(period) {
+    const [year, month] = period.split("-").map(Number);
+    const start = new Date(year, month - 1, 20);
+    const end = new Date(year, month, 20);
+    return { start, end };
+}
+
+async function hasRunThisMonth(period = currentPeriod()) {
+    const log = await JobLog.findOne({ where: { job_name: JOB_NAME, period } });
+    return !!log;
+}
+
+async function runMarkUnpaidSubscriptionsJob() {
+    const period = currentPeriod();
+
+    if (await hasRunThisMonth(period)) {
+        console.log(`[${JOB_NAME}] already ran for ${period}, skipping`);
+        return;
+    }
+
+    const { start, end } = periodRange(period);
+
+    const [updatedCount] = await Subscription.update(
+        { status: "non payé" },
+        {
+            where: {
+                status: "en attente",
+                createdAt: { [Op.gte]: start, [Op.lt]: end },
+            },
+        }
+    );
+
+    await JobLog.create({ job_name: JOB_NAME, period });
+    console.log(`[${JOB_NAME}] marked ${updatedCount} subscriptions as non payé for ${period}`);
+}
+
+function startMarkUnpaidSubscriptionsJob() {
+    // run once on boot, in case a scheduled run was missed during downtime
+    runMarkUnpaidSubscriptionsJob().catch(err => {
+        console.error(`[${JOB_NAME}] boot run failed:`, err);
+    });
+
+    // 15th of every month, 02:04. First real run will land on 15/10.
+    cron.schedule("24 2 15 * *", () => {
+        runMarkUnpaidSubscriptionsJob().catch(err => {
+            console.error(`[${JOB_NAME}] scheduled run failed:`, err);
+        });
+    });
+}
+
+module.exports = {
+    runMarkUnpaidSubscriptionsJob,
+    startMarkUnpaidSubscriptionsJob,
+    hasRunThisMonth,
+    currentPeriod,
+    JOB_NAME
+};

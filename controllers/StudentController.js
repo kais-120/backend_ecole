@@ -1,4 +1,4 @@
-const { validationResult, body } = require("express-validator");
+const { validationResult, body, query } = require("express-validator");
 const Student = require("../models/Student");
 const { Subscription } = require("../models");
 const Price = require("../models/TuitionFee");
@@ -519,10 +519,7 @@ exports.updateStudent = [
     }
 ];
 
-
-
-
-exports.resRegister = [
+exports.reenrollStudent  = [
     body("type")
         .trim()
         .notEmpty()
@@ -604,4 +601,134 @@ exports.resRegister = [
             });
         }
     },
+];
+
+const toBool = (v) => v === true || v === "true";
+
+async function calculatePrice({
+  classe,
+  payment_type,
+  transport,
+  is_take_book,
+  is_take_uniform,
+  zone_id,
+  promotion,
+}) {
+  const daycareBooksFee = await DaycareBooksFee.findOne({ where: { label: classe } });
+  if (!daycareBooksFee) {
+    throw { status: 400, message: "that class not exist." };
+  }
+
+  const bookFee = (toBool(is_take_book) && !daycareBooksFee.books_disabled)
+    ? parseFloat(daycareBooksFee.books)
+    : 0;
+
+  const addition =
+    bookFee +
+    (toBool(transport) ? 10 : 0) +
+    (toBool(is_take_uniform) ? 10 : 0);
+
+  if (payment_type === "غير معني بالدفع") {
+    return {
+      creationMonthPrice: null,
+      normalMonthPrice: null,
+      breakdown: { addition, base: 0, zoneAmount: 0 },
+    };
+  }
+
+  if (!["يدفع شهريًا", "يدفع بالثلاثي", "يدفع سنويًا"].includes(payment_type)) {
+    throw { status: 400, message: "Invalid payment type." };
+  }
+
+  const priceType = payment_type === "يدفع سنويًا" ? "yearly" : "monthly";
+
+  const price = await Price.findOne({ where: { label: classe, type: priceType } });
+  if (!price) {
+    throw { status: 400, message: "that class not exist." };
+  }
+
+  let zoneAmount = 0;
+  if (zone_id) {
+    const zone = await Zone.findOne({ where: { id: zone_id } });
+    if (!zone) {
+      throw { status: 400, message: "that zone not exist." };
+    }
+    zoneAmount = parseFloat(priceType === "monthly" ? zone.amount : zone.amount_yearly);
+  }
+
+  const baseAmount = parseFloat(price.amount) + zoneAmount;
+
+  let creationMonthPrice;
+  let normalMonthPrice;
+
+  if (priceType === "yearly") {
+    // Yearly: no halving, same value both ways.
+    creationMonthPrice = baseAmount + addition;
+    normalMonthPrice = creationMonthPrice;
+  } else {
+    const monthlyAmount = baseAmount / 2; // per-month value derived from the stored price row
+
+    if (payment_type === "يدفع بالثلاثي") {
+      // Quarterly: NOT halved — full quarter + one-time addition on creation
+      const fullQuarterly = monthlyAmount * 3;
+      creationMonthPrice = fullQuarterly + addition;
+      normalMonthPrice = fullQuarterly;
+    } else {
+      // Monthly ONLY: creation month is halved
+      creationMonthPrice = (monthlyAmount / 2) + addition;
+      normalMonthPrice = monthlyAmount;
+    }
+  }
+
+  if (promotion === "discount_50") {
+    creationMonthPrice = creationMonthPrice / 2;
+    normalMonthPrice = normalMonthPrice / 2;
+  } else if (promotion === "free") {
+    creationMonthPrice = 0;
+    normalMonthPrice = 0;
+  }
+
+  return {
+    creationMonthPrice,
+    normalMonthPrice,
+    breakdown: { addition, base: baseAmount, zoneAmount },
+  };
+}
+
+exports.previewPrice = [
+  query("classe").trim().notEmpty().withMessage("Class is required."),
+  query("payment_type").trim().notEmpty().withMessage("Payment type is required."),
+  query("promotion")
+    .optional({ checkFalsy: true })
+    .isIn(["discount_50", "free"])
+    .withMessage("Invalid promotion type."),
+
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: "Validation failed", errors: errors.array() });
+    }
+
+    const { classe, payment_type, transport, is_take_book, is_take_uniform, zone_id, promotion } = req.query;
+
+    try {
+      const { creationMonthPrice, normalMonthPrice, breakdown } = await calculatePrice({
+        classe,
+        payment_type,
+        transport,
+        is_take_book,
+        is_take_uniform,
+        zone_id,
+        promotion,
+      });
+
+      return res.status(200).json({ creationMonthPrice, normalMonthPrice, breakdown });
+    } catch (err) {
+      if (err.status) {
+        return res.status(err.status).json({ message: err.message });
+      }
+      console.error("Preview price error:", err);
+      return res.status(500).json({ message: "Server error." });
+    }
+  },
 ];

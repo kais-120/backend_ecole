@@ -20,7 +20,7 @@ router.get('/summary', getDashboardSummary);
 router.get('/summary-financial', getFinancialSummary);
 
 router.get(
-  "/dashboard/payments-summary",
+  "/payments-summary",
 
   getPaymentsSummary
 
