@@ -666,10 +666,10 @@ async function calculatePrice({
     creationMonthPrice = baseAmount + addition;
     normalMonthPrice = creationMonthPrice;
   } else {
-    const monthlyAmount = baseAmount / 2; // per-month value derived from the stored price row
+    const monthlyAmount = baseAmount; // stored price row IS the monthly value — no halving here
 
     if (payment_type === "يدفع بالثلاثي") {
-      // Quarterly: NOT halved — full quarter + one-time addition on creation
+      // Quarterly: full quarter + one-time addition on creation
       const fullQuarterly = monthlyAmount * 3;
       creationMonthPrice = fullQuarterly + addition;
       normalMonthPrice = fullQuarterly;

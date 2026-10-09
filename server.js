@@ -10,6 +10,8 @@ const startSalaryJob = require("./jobs/salaryJob");
 const { startMonthlySubscriptionJob } = require("./jobs/generateMonthlySubscriptions");
 const { startTrimesterSubscriptionJob  } = require("./jobs/generateTrimesterSubscriptions");
 const { startMarkUnpaidSubscriptionsJob  } = require("./jobs/MarkUnpaidSubscriptions");
+const { startGenerateMonthlyStaffSalariesJob } = require("./jobs/generateMonthlyStaffSalaries");
+const { startFinalizeStaffSalariesJob } = require("./jobs/finalizeStaffSalaries");
 
 
 const port = process.env.PORT || 5000;
@@ -17,6 +19,7 @@ const port = process.env.PORT || 5000;
 sequelize.authenticate()
   .then(() => {
     console.log("✅ Neon PostgreSQL connected");
+    sequelize.sync({alter:true})
     console.log("✅ Database synchronized");
   })
   
@@ -36,4 +39,6 @@ app.listen(port, async () => {
     startMonthlySubscriptionJob();
     startTrimesterSubscriptionJob ()
     startMarkUnpaidSubscriptionsJob()
+    // startGenerateMonthlyStaffSalariesJob()
+    // startFinalizeStaffSalariesJob()
 });

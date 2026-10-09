@@ -8,13 +8,22 @@ const JOB_NAME = "mark_unpaid_subscriptions";
 
 // Same 20th -> 20th billing cycle as generateMonthlySubscriptions.js.
 // By the 15th, we're still inside the period that started on the 20th of last month.
-function currentPeriod(date = new Date()) {
+function targetPeriodAnchor(date = new Date()) {
+    // find the most recent 15th on/before today
     let year = date.getFullYear();
-    let month = date.getMonth(); // 0-indexed
-    if (date.getDate() < 20) {
+    let month = date.getMonth();
+    if (date.getDate() < 15) {
         month -= 1;
         if (month < 0) { month = 11; year -= 1; }
     }
+    return new Date(year, month, 15);
+}
+
+function currentPeriod(date = new Date()) {
+    const anchor = targetPeriodAnchor(date);
+    let year = anchor.getFullYear();
+    let month = anchor.getMonth() - 1;
+    if (month < 0) { month = 11; year -= 1; }
     return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
 
@@ -61,7 +70,7 @@ function startMarkUnpaidSubscriptionsJob() {
     });
 
     // 15th of every month, 02:04. First real run will land on 15/10.
-    cron.schedule("24 2 15 * *", () => {
+    cron.schedule("5 0 15 * *", () => {
         runMarkUnpaidSubscriptionsJob().catch(err => {
             console.error(`[${JOB_NAME}] scheduled run failed:`, err);
         });

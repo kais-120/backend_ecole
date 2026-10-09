@@ -153,5 +153,7 @@ module.exports = {
     calculateMonthlySalaries,
     computeHoursFromRecords,
     recalculateMonthForTeacher,
+    getPayPeriodForDateOnly,
+    getPayPeriodBounds,
     getPayPeriodForDateOnly
 };

@@ -67,12 +67,18 @@ async function runMonthlySubscriptionJob() {
         return;
     }
 
-    if (await hasRunThisMonth(period)) {
-        console.log(`[${JOB_NAME}] already ran for ${period}, skipping`);
-        return;
+    // Claim the period FIRST, atomically, before touching any student data.
+    try {
+        await JobLog.create({ job_name: JOB_NAME, period });
+    } catch (err) {
+        if (err.name === "SequelizeUniqueConstraintError") {
+            console.log(`[${JOB_NAME}] already ran (or running) for ${period}, skipping`);
+            return;
+        }
+        throw err;
     }
 
-    // Batch every lookup up front instead of querying per student.
+    // Now safe — only one process can ever reach this point per period.
     const [students, allSubscriptions, monthlyPrices, zones] = await Promise.all([
         Student.findAll(),
         Subscription.findAll({ order: [["createdAt", "DESC"]] }),
@@ -80,8 +86,6 @@ async function runMonthlySubscriptionJob() {
         Zone.findAll(),
     ]);
 
-    // Latest subscription per student — allSubscriptions is already DESC by createdAt,
-    // so the first one seen per student_id is the most recent.
     const lastSubscriptionByStudent = new Map();
     for (const sub of allSubscriptions) {
         if (!lastSubscriptionByStudent.has(sub.student_id)) {
@@ -103,7 +107,6 @@ async function runMonthlySubscriptionJob() {
             continue;
         }
 
-        // only regenerate for students actually on the monthly plan
         if (lastSubscription.payment_type !== MONTHLY_PLAN) {
             continue;
         }
@@ -133,15 +136,13 @@ async function runMonthlySubscriptionJob() {
             student_id: student.id,
             zone_id: lastSubscription.zone_id || null,
             promotion: lastSubscription.promotion || null,
-            is_take_book:lastSubscription.is_take_book,
-            is_take_uniform:lastSubscription.is_take_uniform
-
+            is_take_book: lastSubscription.is_take_book,
+            is_take_uniform: lastSubscription.is_take_uniform,
         });
 
         created++;
     }
 
-    await JobLog.create({ job_name: JOB_NAME, period });
     console.log(`[${JOB_NAME}] created ${created} subscriptions, skipped ${skipped} for ${period}`);
 }
 
@@ -151,7 +152,7 @@ function startMonthlySubscriptionJob() {
         console.error(`[${JOB_NAME}] boot run failed:`, err);
     });
 
-    cron.schedule("22 2 20 * *", () => {
+    cron.schedule("5 0 20 * *", () => {
         runMonthlySubscriptionJob().catch(err => {
             console.error(`[${JOB_NAME}] scheduled run failed:`, err);
         });

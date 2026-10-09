@@ -12,8 +12,6 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
   },
 });
 
-// module.exports = sequelize;
-// const { Sequelize } = require("sequelize");
 // const sequelize = new Sequelize({
 //     username:process.env.USERNAMEDB,
 //     password:process.env.PASSWORDDB,
